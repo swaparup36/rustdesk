@@ -156,6 +156,8 @@ enum MessageInput {
     Pointer((PointerDeviceEvent, i32)),
     BlockOn,
     BlockOff,
+    #[cfg(windows)]
+    ReleaseLocalInput,
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
@@ -597,6 +599,8 @@ impl Connection {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         std::thread::spawn(move || Self::handle_input(_rx_input, tx_cloned));
         let mut second_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
+        #[cfg(windows)]
+        let mut last_control_revision = 0;
 
         #[cfg(feature = "unix-file-copy-paste")]
         let rx_clip_holder;
@@ -677,6 +681,8 @@ impl Connection {
                             log::info!("Change permission {} -> {}", name, enabled);
                             if &name == "keyboard" {
                                 conn.keyboard = enabled;
+                                #[cfg(windows)]
+                                let enabled = enabled && !crate::platform::windows::local_control::is_paused();
                                 conn.send_permission(Permission::Keyboard, enabled).await;
                                 if let Some(s) = conn.server.upgrade() {
                                     s.write().unwrap().subscribe(
@@ -1032,6 +1038,19 @@ impl Connection {
                 _ = second_timer.tick() => {
                     #[cfg(windows)]
                     conn.portable_check();
+                    #[cfg(windows)]
+                    if conn.is_authed_remote_conn() {
+                        let (revision, paused) = crate::platform::windows::local_control::state();
+                        if revision != last_control_revision {
+                            last_control_revision = revision;
+                            if paused {
+                                if let Err(err) = conn.tx_input.send(MessageInput::ReleaseLocalInput) {
+                                    log::warn!("Failed to release local input: {}", err);
+                                }
+                            }
+                            conn.send_local_control_state(paused).await;
+                        }
+                    }
                     raii::AuthedConnID::check_wake_lock_on_setting_changed();
                     if let Some((instant, minute)) = conn.auto_disconnect_timer.as_ref() {
                         if instant.elapsed().as_secs() > minute * 60 {
@@ -1127,6 +1146,10 @@ impl Connection {
             match receiver.recv_timeout(std::time::Duration::from_millis(500)) {
                 Ok(v) => match v {
                     MessageInput::Mouse(mouse_input) => {
+                        #[cfg(windows)]
+                        if crate::platform::windows::local_control::is_paused() {
+                            continue;
+                        }
                         handle_mouse(
                             &mouse_input.msg,
                             mouse_input.conn_id,
@@ -1137,6 +1160,10 @@ impl Connection {
                         );
                     }
                     MessageInput::Key((mut msg, press)) => {
+                        #[cfg(windows)]
+                        if crate::platform::windows::local_control::is_paused() {
+                            continue;
+                        }
                         // Set the press state to false, use `down` only in `handle_key()`.
                         msg.press = false;
                         if press {
@@ -1149,9 +1176,17 @@ impl Connection {
                         }
                     }
                     MessageInput::Pointer((msg, id)) => {
+                        #[cfg(windows)]
+                        if crate::platform::windows::local_control::is_paused() {
+                            continue;
+                        }
                         handle_pointer(&msg, id);
                     }
                     MessageInput::BlockOn => {
+                        #[cfg(windows)]
+                        if crate::platform::windows::local_control::is_paused() {
+                            continue;
+                        }
                         let (ok, msg) = crate::platform::block_input(true);
                         if ok {
                             block_input_mode = true;
@@ -1173,6 +1208,18 @@ impl Connection {
                                 back_notification::BlockInputState::BlkOffFailed,
                                 msg,
                             );
+                        }
+                    }
+                    #[cfg(windows)]
+                    MessageInput::ReleaseLocalInput => {
+                        release_remote_input_for_local_control();
+                        if block_input_mode {
+                            let (ok, msg) = crate::platform::block_input(false);
+                            if ok {
+                                block_input_mode = false;
+                            } else {
+                                log::warn!("Failed to release local input: {}", msg);
+                            }
                         }
                     }
                 },
@@ -1271,6 +1318,16 @@ impl Connection {
         let mut msg_out = Message::new();
         msg_out.set_misc(misc);
         self.send(msg_out).await;
+    }
+
+    #[cfg(windows)]
+    async fn send_local_control_state(&mut self, paused: bool) {
+        self.send_permission(Permission::Keyboard, self.keyboard && !paused).await;
+        let mut misc = Misc::new();
+        misc.set_local_input_control(!paused);
+        let mut message = Message::new();
+        message.set_misc(misc);
+        self.send(message).await;
     }
 
     async fn check_privacy_mode_on(&mut self) -> bool {
@@ -2176,6 +2233,10 @@ impl Connection {
     }
 
     fn peer_keyboard_enabled(&self) -> bool {
+        #[cfg(windows)]
+        if crate::platform::windows::local_control::is_paused() {
+            return false;
+        }
         self.keyboard && !self.disable_keyboard
     }
 
@@ -6706,6 +6767,10 @@ mod raii {
                     .unwrap()
                     .on_connection_open(conn_id);
             }
+            #[cfg(windows)]
+            if conn_type == AuthConnType::Remote {
+                crate::platform::windows::local_control::session_started();
+            }
             Self(conn_id, conn_type)
         }
 
@@ -6821,6 +6886,10 @@ mod raii {
 
     impl Drop for AuthedConnID {
         fn drop(&mut self) {
+            #[cfg(windows)]
+            if self.1 == AuthConnType::Remote {
+                crate::platform::windows::local_control::session_ended();
+            }
             if self.1 == AuthConnType::Remote || self.1 == AuthConnType::ViewCamera {
                 scrap::codec::Encoder::update(scrap::codec::EncodingUpdate::Remove(self.0));
                 video_service::VIDEO_QOS

@@ -36,6 +36,7 @@ dependencies:
   package_info_plus: ^4.2.0
   url_launcher: ^6.3.1
   url_launcher_ios: ^6.3.2
+  desktop_webview_window: ^0.3.0
   toggle_switch: ^2.1.0
   dash_chat_2:
     git:

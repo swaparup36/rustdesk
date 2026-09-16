@@ -10,6 +10,7 @@ const int kAllVirtualDisplay = -1;
 const double kDesktopRemoteTabBarHeight = 28.0;
 const int kInvalidWindowId = -1;
 const int kMainWindowId = 0;
+const String kAppDisplayName = 'techno-browser';
 
 const kAllDisplayValue = -1;
 

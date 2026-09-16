@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>techno-browser Connect</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; color: #f6f7fb; background: #161923; }
+    header { display: flex; align-items: center; gap: 14px; height: 76px; padding: 0 max(28px, calc((100vw - 1020px) / 2)); border-bottom: 1px solid #353948; background: #202430; }
+    .logo { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: #2876ef; color: #fff; font-size: 24px; font-weight: 800; }
+    header strong { font-size: 20px; }
+    main { display: grid; grid-template-columns: minmax(250px, 1fr) minmax(320px, 1.4fr); gap: 24px; max-width: 1020px; margin: 48px auto; padding: 0 28px; }
+    .card { padding: 32px; border: 1px solid #353948; border-radius: 16px; background: #232735; box-shadow: 0 12px 40px #080a1238; }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    h2 { margin: 0 0 16px; font-size: 17px; }
+    p { color: #b8becd; line-height: 1.55; }
+    label { display: block; margin: 24px 0 10px; color: #cdd2df; font-size: 13px; font-weight: 600; }
+    input { display: block; width: 100%; height: 48px; padding: 0 14px; border: 1px solid #565c70; border-radius: 9px; outline: 0; background: #171a25; color: #fff; font: inherit; font-size: 17px; }
+    input:focus { border-color: #4288ff; box-shadow: 0 0 0 3px #4288ff36; }
+    button { height: 42px; margin-top: 18px; padding: 0 26px; border: 0; border-radius: 9px; background: #2876ef; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    button:hover { background: #4288ff; }
+    .your-id { margin-top: 26px; padding: 16px; border: 1px solid #3a4153; border-radius: 10px; background: #1b1f2a; }
+    .your-id small { display: block; margin-bottom: 8px; color: #abb2c2; }
+    .your-id strong { font-size: 18px; letter-spacing: .05em; }
+    a { color: #a6c7ff; }
+    @media (max-width: 700px) { main { grid-template-columns: 1fr; margin-top: 24px; } }
+  </style>
+</head>
+<body>
+  <header><span class="logo">T</span><strong>techno-browser</strong></header>
+  <main>
+    <section class="card">
+      <h2>This device</h2>
+      <p>Use your ID to let someone connect to this computer.</p>
+      <div class="your-id"><small>Your ID</small><strong id="local-id">Loading…</strong></div>
+    </section>
+    <section class="card">
+      <h1>Connect to a remote desktop</h1>
+      <p>Enter the ID of the computer you want to control.</p>
+      <form id="connect"><label for="remote-id">Remote ID</label><input id="remote-id" autocomplete="off" spellcheck="false" placeholder="Enter Remote ID" required autofocus><button type="submit">Connect</button></form>
+      <div id="recent" hidden><h2>Recent connections</h2><div id="recent-list"></div></div>
+    </section>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    document.getElementById('local-id').textContent = params.get('id') || 'Unavailable';
+    document.getElementById('remote-id').value = params.get('last') || '';
+    try {
+      const peers = JSON.parse(params.get('recent') || '[]');
+      const list = document.getElementById('recent-list');
+      for (const peer of peers) {
+        if (!peer.id) continue;
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.textContent = peer.name ? peer.name + ' · ' + peer.id : peer.id;
+        item.style.cssText = 'display:block;width:100%;margin:8px 0;text-align:left;background:#303749';
+        item.addEventListener('click', () => connectTo(peer.id));
+        list.appendChild(item);
+      }
+      document.getElementById('recent').hidden = !list.children.length;
+    } catch (_) { document.getElementById('recent').hidden = true; }
+    function connectTo(id) {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(JSON.stringify({type: 'connect', id: id}));
+      } else {
+        location.href = 'techno://connect/' + encodeURIComponent(id);
+      }
+    }
+    document.getElementById('connect').addEventListener('submit', function (event) {
+      event.preventDefault();
+      const id = document.getElementById('remote-id').value.trim();
+      if (id) connectTo(id);
+    });
+  </script>
+</body>
+</html>

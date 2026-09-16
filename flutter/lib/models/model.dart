@@ -919,6 +919,11 @@ class FfiModel with ChangeNotifier {
 
     if (type == 're-input-password') {
       wrongPasswordDialog(sessionId, dialogManager, type, title, text);
+    } else if (type == 'local-input-control') {
+      if (!keyboard) {
+        parent.target?.inputModel.setRelativeMouseMode(false);
+      }
+      showToast(text, timeout: const Duration(seconds: 6));
     } else if (type == 'input-2fa') {
       enter2FaDialog(sessionId, dialogManager);
     } else if (type == 'input-password') {

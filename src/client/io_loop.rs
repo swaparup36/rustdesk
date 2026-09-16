@@ -1872,6 +1872,18 @@ impl<T: InvokeUiSession> Remote<T> {
                     Some(misc::Union::ChatMessage(c)) => {
                         self.handler.new_message(c.text);
                     }
+                    Some(misc::Union::LocalInputControl(remote_enabled)) => {
+                        let text = if remote_enabled {
+                            if *self.handler.server_keyboard_enabled.read().unwrap() {
+                                "The person at the remote computer has returned control to you."
+                            } else {
+                                "Local control has ended, but remote input permission is still disabled."
+                            }
+                        } else {
+                            "The person at the remote computer has taken control. You can still view the session."
+                        };
+                        self.handler.msgbox("local-input-control", "Control handoff", text, "");
+                    }
                     Some(misc::Union::PermissionInfo(p)) => {
                         log::info!("Change permission {:?} -> {}", p.permission, p.enabled);
                         // https://github.com/rustdesk/rustdesk/issues/3703#issuecomment-1474734754

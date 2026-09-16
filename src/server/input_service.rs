@@ -897,6 +897,21 @@ pub fn release_device_modifiers() {
     }
 }
 
+#[cfg(windows)]
+pub(crate) fn release_remote_input_for_local_control() {
+    fix_key_down_timeout(true);
+    let mut en = ENIGO.lock().unwrap();
+    for button in [
+        MouseButton::Left,
+        MouseButton::Right,
+        MouseButton::Middle,
+        MouseButton::Back,
+        MouseButton::Forward,
+    ] {
+        en.mouse_up(button);
+    }
+}
+
 #[inline]
 fn release_record_key(record_key: KeysDown) {
     let func = move || match record_key {

@@ -30,6 +30,8 @@ import 'package:window_size/window_size.dart' as window_size;
 
 import '../consts.dart';
 import 'common/widgets/overlay.dart';
+import 'desktop/browser.dart'
+    if (dart.library.html) 'desktop/browser_stub.dart';
 import 'mobile/pages/file_manager_page.dart';
 import 'mobile/pages/remote_page.dart';
 import 'mobile/pages/view_camera_page.dart';
@@ -1607,7 +1609,8 @@ String translate(String name) {
   if (name.startsWith('Failed to') && name.contains(': ')) {
     return name.split(': ').map((x) => translate(x)).join(': ');
   }
-  return platformFFI.translate(name, localeName);
+  return platformFFI.translate(name, localeName)
+      .replaceAll('RustDesk', kAppDisplayName);
 }
 
 // This function must be kept the same as the one in rust and sciter code.
@@ -2212,6 +2215,12 @@ Future<bool> initUniLinks() async {
   }
 }
 
+bool isTechnoConnectUri(Uri uri) {
+  return uri.scheme.toLowerCase() == 'techno' &&
+      uri.authority.toLowerCase() == 'connect' &&
+      (uri.path.isEmpty || uri.path == '/');
+}
+
 /// Listen for uni links.
 ///
 /// * handleByFlutter: Should uni links be handled by Flutter.
@@ -2255,22 +2264,30 @@ setEnvTerminalAdmin() {
 // uri link handler
 bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   List<String>? args;
+  Uri? sourceUri;
   if (cmdArgs != null && cmdArgs.isNotEmpty) {
     args = cmdArgs;
     // rustdesk <uri link>
     if (args[0].startsWith(bind.mainUriPrefixSync())) {
       final uri = Uri.tryParse(args[0]);
       if (uri != null) {
+        sourceUri = uri;
         args = urlLinkToCmdArgs(uri);
       }
     }
   } else if (uri != null) {
+    sourceUri = uri;
     args = urlLinkToCmdArgs(uri);
   } else if (uriString != null) {
     final uri = Uri.tryParse(uriString);
     if (uri != null) {
+      sourceUri = uri;
       args = urlLinkToCmdArgs(uri);
     }
+  }
+  if (isDesktop && sourceUri != null && isTechnoConnectUri(sourceUri)) {
+    showTechnoConnectTab();
+    return true;
   }
   if (args == null) {
     return false;
@@ -2830,43 +2847,8 @@ Future<void> onActiveWindowChanged() async {
   print(
       "[MultiWindowHandler] active window changed: ${rustDeskWinManager.getActiveWindows()}");
   if (rustDeskWinManager.getActiveWindows().isEmpty) {
-    // close all sub windows
-    try {
-      if (isLinux) {
-        await Future.wait([
-          saveWindowPosition(WindowType.Main),
-          rustDeskWinManager.closeAllSubWindows()
-        ]);
-      } else {
-        await rustDeskWinManager.closeAllSubWindows();
-      }
-    } catch (err) {
-      debugPrintStack(label: "$err");
-    } finally {
-      debugPrint("Start closing RustDesk...");
-      await windowManager.setPreventClose(false);
-      await windowManager.close();
-      if (isMacOS) {
-        // If we call without delay, `flutter/macos/Runner/MainFlutterWindow.swift` can handle the "terminate" event.
-        // But the app will not close.
-        //
-        // No idea why we need to delay here, `terminate()` itself is also an async function.
-        //
-        // A quick workaround, use `Timer.periodic` to avoid the app not closing.
-        // Because `await windowManager.close()` and `RdPlatformChannel.instance.terminate()`
-        // may not work since `Flutter 3.24.4`, see the following logs.
-        // A delay will allow the app to close.
-        //
-        //```
-        // embedder.cc (2725): 'FlutterPlatformMessageCreateResponseHandle' returned 'kInvalidArguments'. Engine handle was invalid.
-        // 2024-11-11 11:41:11.546 RustDesk[90272:2567686] Failed to create a FlutterPlatformMessageResponseHandle (2)
-        // embedder.cc (2672): 'FlutterEngineSendPlatformMessage' returned 'kInvalidArguments'. Invalid engine handle.
-        // 2024-11-11 11:41:11.565 RustDesk[90272:2567686] Failed to send message to Flutter engine on channel 'flutter/lifecycle' (2).
-        // ```
-        periodic_immediate(
-            Duration(milliseconds: 30), RdPlatformChannel.instance.terminate);
-      }
-    }
+    await windowManager.hide();
+    await showDesktopBrowser(onUrlRequest: handleBrowserUrlRequest);
   }
 }
 
@@ -3021,7 +3003,7 @@ int versionCmp(String v1, String v2) {
 }
 
 String getWindowName({WindowType? overrideType}) {
-  final name = bind.mainGetAppNameSync();
+  const name = kAppDisplayName;
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
       return name;
@@ -3822,14 +3804,7 @@ class _LogoState extends State<_Logo> {
 Widget loadLogo() => const _Logo();
 
 Widget loadIcon(double size) {
-  return Image.asset('assets/icon.png',
-      width: size,
-      height: size,
-      errorBuilder: (ctx, error, stackTrace) => SvgPicture.asset(
-            'assets/icon.svg',
-            width: size,
-            height: size,
-          ));
+  return SvgPicture.asset('assets/icon.svg', width: size, height: size);
 }
 
 var imcomingOnlyHomeSize = Size(280, 300);

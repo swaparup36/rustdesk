@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New tab</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; color: #fff; background: radial-gradient(ellipse at 45% 72%, #b1a1ff 0, #765ded 38%, #4930d2 68%, #171331 100%); }
+    main { width: min(620px, calc(100% - 36px)); margin: 0 auto; padding-top: 58px; }
+    .shortcuts { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px; }
+    .shortcut { display: flex; flex-direction: column; align-items: center; gap: 9px; min-width: 76px; color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; }
+    .icon { display: grid; place-items: center; width: 70px; height: 70px; border-radius: 20px; background: #a9a5bd; color: #242432; font-size: 30px; font-weight: 700; box-shadow: 0 3px 14px #1c16432b; }
+    .shortcut:hover .icon { background: #d5d0eb; }
+    form { display: flex; align-items: center; gap: 14px; margin: 78px auto 0; padding: 0 20px; width: min(520px, 100%); height: 62px; border-radius: 16px; background: #202024; box-shadow: 0 12px 24px #1712365c; }
+    form span { color: #ff744a; font-size: 22px; }
+    input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #fff; font: inherit; font-size: 16px; }
+    input::placeholder { color: #a2a1ab; }
+    .hint { margin-top: 24px; text-align: center; color: #eeebff; font-size: 14px; }
+    .hint a { color: white; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="shortcuts" aria-label="Shortcuts">
+      <a class="shortcut" href="techno://connect"><span class="icon">↗</span><span>Connect</span></a>
+      <a class="shortcut" href="https://www.wikipedia.org"><span class="icon">W</span><span>Wikipedia</span></a>
+      <a class="shortcut" href="https://github.com"><span class="icon">⌘</span><span>GitHub</span></a>
+      <a class="shortcut" href="https://www.google.com"><span class="icon">G</span><span>Google</span></a>
+    </nav>
+    <form id="search" role="search"><span>⌕</span><input id="query" aria-label="Search or enter address" placeholder="Search or enter an address" autofocus></form>
+    <p class="hint">To connect to a remote desktop, open <a href="techno://connect">Connect</a>.</p>
+  </main>
+  <script>
+    document.getElementById('search').addEventListener('submit', function (event) {
+      event.preventDefault();
+      const value = document.getElementById('query').value.trim();
+      if (!value) return;
+      if (value.startsWith('techno://')) {
+        location.href = value;
+      } else if (/^https?:\/\//i.test(value)) {
+        location.href = value;
+      } else if (/^[^\s]+\.[^\s]+$/.test(value)) {
+        location.href = 'https://' + value;
+      } else {
+        location.href = 'https://www.google.com/search?q=' + encodeURIComponent(value);
+      }
+    });
+  </script>
+</body>
+</html>

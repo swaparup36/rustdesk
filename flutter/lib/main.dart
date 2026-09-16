@@ -25,6 +25,10 @@ import 'package:window_manager/window_manager.dart';
 
 import 'common.dart';
 import 'consts.dart';
+import 'desktop/browser.dart'
+    if (dart.library.html) 'desktop/browser_stub.dart';
+import 'desktop/webview_title_bar.dart'
+    if (dart.library.html) 'desktop/webview_title_bar_stub.dart';
 import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
 import 'mobile/widgets/deploy_dialog.dart';
@@ -34,8 +38,13 @@ import 'models/platform_model.dart';
 int? kWindowId;
 WindowType? kWindowType;
 late List<String> kBootArgs;
+bool _technoConnectRequested = false;
+bool _mainWindowReady = false;
 
 Future<void> main(List<String> args) async {
+  if (runDesktopWebViewTitleBarWidget(args)) {
+    return;
+  }
   earlyAssert();
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -141,6 +150,7 @@ void runMainApp(bool startService) async {
   }
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
+  listenUniLinks();
   runApp(App());
 
   bool? alwaysOnTop;
@@ -158,19 +168,63 @@ void runMainApp(bool startService) async {
     // Check the startup argument, if we successfully handle the argument, we keep the main window hidden.
     final handledByUniLinks = await initUniLinks();
     debugPrint("handled by uni links: $handledByUniLinks");
-    if (handledByUniLinks || handleUriLink(cmdArgs: kBootArgs)) {
-      windowManager.hide();
+    final handledByCommandLine =
+        !handledByUniLinks && handleUriLink(cmdArgs: kBootArgs);
+    _mainWindowReady = true;
+    if (_technoConnectRequested) {
+      final browserOpened = await showDesktopBrowser(
+        onUrlRequest: handleBrowserUrlRequest,
+        openConnectTab: true,
+      );
+      if (browserOpened) {
+        await windowManager.hide();
+      } else {
+        await windowManager.show();
+        await windowManager.focus();
+        await rustDeskWinManager.registerActiveWindow(kMainWindowId);
+      }
+    } else if (handledByUniLinks || handledByCommandLine) {
+      await windowManager.hide();
     } else {
-      windowManager.show();
-      windowManager.focus();
-      // Move registration of active main window here to prevent from async visible check.
-      rustDeskWinManager.registerActiveWindow(kWindowMainId);
+      final browserOpened = await showDesktopBrowser(
+        onUrlRequest: handleBrowserUrlRequest,
+      );
+      if (browserOpened) {
+        await windowManager.hide();
+      } else {
+        await windowManager.show();
+        await windowManager.focus();
+        // Move registration of active main window here to prevent from async visible check.
+        await rustDeskWinManager.registerActiveWindow(kWindowMainId);
+      }
     }
     windowManager.setOpacity(1);
-    windowManager.setTitle(getWindowName());
+    windowManager.setTitle(bind.mainGetAppNameSync());
     // Do not use `windowManager.setResizable()` here.
     setResizable(!bind.isIncomingOnly());
   });
+}
+
+bool handleBrowserUrlRequest(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null || uri.scheme.toLowerCase() != 'techno') {
+    return true;
+  }
+  handleUriLink(uri: uri);
+  return false;
+}
+
+Future<void> showTechnoConnectTab() async {
+  if (!isDesktop || desktopType != DesktopType.main) {
+    return;
+  }
+  _technoConnectRequested = true;
+  if (_mainWindowReady) {
+    await showDesktopBrowser(
+      onUrlRequest: handleBrowserUrlRequest,
+      openConnectTab: true,
+    );
+  }
 }
 
 void runMobileApp() async {
@@ -496,8 +550,8 @@ class _AppState extends State<App> with WidgetsBindingObserver {
           navigatorKey: globalKey,
           debugShowCheckedModeBanner: false,
           title: isWeb
-              ? '${bind.mainGetAppNameSync()} Web Client V2 (Preview)'
-              : bind.mainGetAppNameSync(),
+              ? '$kAppDisplayName Web Client V2 (Preview)'
+              : kAppDisplayName,
           theme: MyTheme.lightTheme,
           darkTheme: MyTheme.darkTheme,
           themeMode: MyTheme.currentThemeMode(),
